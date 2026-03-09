@@ -1,58 +1,142 @@
-// --- 新增：上色助手函数 ---
-function getHSL(h, s, l, a = 1) {
-    return `hsla(${h}, ${s}%, ${l}%, ${a})`;
-}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Procedural Landscape - HSL Powered</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #eee; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        #output { background: white; box-shadow: 0 0 20px rgba(0,0,0,0.2); }
+    </style>
+</head>
+<body>
 
-// --- 新增：场景生成主函数 ---
-function generateNewScene() {
-    // 1. 清空旧内容 (假设你的绘图输出在 id 为 "output" 的 div 中)
-    const container = document.getElementById("output");
-    container.innerHTML = ""; 
+<div id="output"></div>
 
-    // 2. 自动更换随机种子点
-    const newSeed = "" + new Date().getTime();
-    Math.seed(newSeed);
-    console.log("正在绘制新场景，种子:", newSeed);
+<script>
+  var Prng = new function() {
+    this.s = 1234; this.p = 999979; this.q = 999983; this.m = this.p * this.q;
+    this.hash = function(x) {
+      var y = btoa(JSON.stringify(x)), z = 0;
+      for (var i = 0; i < y.length; i++) z += y.charCodeAt(i) * Math.pow(128, i);
+      return z;
+    };
+    this.seed = function(x) {
+      if (x == undefined) x = new Date().getTime();
+      var y = 0, z = 0;
+      function redo() { y = (Prng.hash(x) + z) % Prng.m; z += 1; }
+      while (y % Prng.p == 0 || y % Prng.q == 0 || y == 0 || y == 1) redo();
+      this.s = y;
+      for (var i = 0; i < 10; i++) this.next();
+    };
+    this.next = function() { this.s = (this.s * this.s) % this.m; return this.s / this.m; };
+  }();
+  Math.random = function() { return Prng.next(); };
+  Math.seed = function(x) { return Prng.seed(x); };
 
-    // 3. 定义一套本场绘画的主色调 (HSL)
-    // 这样可以确保一张画里的树木和山色是协调的
-    const themeHue = Math.floor(Math.random() * 360); 
+  // --- Noise, PolyTools, Util 简化整合 (保留原算法) ---
+  var Noise = new function() {
+    var p = Array.from({length: 4097}, () => Math.random());
+    this.noise = function(x, y=0) {
+      var xi = Math.floor(x) & 4095, yi = Math.floor(y) & 4095;
+      var xf = x - Math.floor(x), yf = y - Math.floor(y);
+      var r = (v) => 0.5 * (1 - Math.cos(v * Math.PI));
+      var n1 = p[xi] + r(xf) * (p[xi+1] - p[xi]);
+      var n2 = p[xi+128] + r(xf) * (p[xi+129] - p[xi+128]);
+      return n1 + r(yf) * (n2 - n1);
+    };
+  }();
 
-    // 4. 调用原有的绘制程式 (这里以 Tree.tree01 为例进行上色演示)
-    let sceneMarkup = "";
+  function normRand(m, M) { return m + Math.random() * (M - m); }
+  function randChoice(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function poly(plist, args = {}) {
+    var xof = args.xof || 0, yof = args.yof || 0, fil = args.fil || "none", str = args.str || "none", wid = args.wid || 0;
+    return `<polyline points='${plist.map(p => (p[0]+xof).toFixed(1)+","+(p[1]+yof).toFixed(1)).join(" ")}' style='fill:${fil};stroke:${str};stroke-width:${wid}'/>`;
+  }
+  function blob(x, y, args = {}) {
+    var len = args.len || 20, wid = args.wid || 5, ang = args.ang || 0, col = args.col || "grey";
+    var plist = [];
+    for(var i=0; i<=10; i++){
+      var p = i/10, curW = Math.sin(p * Math.PI) * wid;
+      var tx = x + Math.cos(ang) * (p - 0.5) * len + Math.cos(ang + Math.PI/2) * curW;
+      var ty = y + Math.sin(ang) * (p - 0.5) * len + Math.sin(ang + Math.PI/2) * curW;
+      plist.push([tx, ty]);
+    }
+    return poly(plist, {fil: col, str: col, wid: 0.5});
+  }
 
-    // 绘制背景色块（类似宣纸感）
-    container.style.backgroundColor = getHSL(35, 30, 95); // 淡淡的米黄色
+  // --- HSL 颜色生成器 ---
+  function getHSL(h, s, l, a = 1) { return `hsla(${h}, ${s}%, ${l}%, ${a})`; }
 
-    // 示例：生成一组带颜色的树
-    for (let i = 0; i < 5; i++) {
-        const x = 100 + i * 150;
-        const y = 500;
+  var Tree = new function() {
+    this.drawAt = function(x, y, themeHue) {
+      var canv = "";
+      var hei = normRand(100, 250), wid = normRand(4, 8);
+      var trunkCol = getHSL(25, 30, 20, 0.9); // 深色树干
+      
+      var line1 = [], line2 = [];
+      for (var i = 0; i < 15; i++) {
+        var ny = y - (i * hei) / 15, nx = x + Noise.noise(i * 0.2) * 20 - 10;
+        line1.push([nx - wid/2, ny]);
+        line2.push([nx + wid/2, ny]);
         
-        // 动态计算颜色：在主题色基础上小范围波动
-        const treeColor = getHSL(
-            (themeHue + normRand(-20, 20)) % 360, 
-            normRand(20, 50), 
-            normRand(30, 60), 
-            0.8
-        );
+        // 叶子逻辑：使用 HSL 算法
+        if (i > 5) {
+          for (var j = 0; j < 3; j++) {
+            var leafH = (themeHue + normRand(-20, 20)) % 360;
+            var leafS = normRand(30, 60);
+            var leafL = normRand(30, 50);
+            canv += blob(nx + normRand(-wid*5, wid*5), ny + normRand(-10, 10), {
+              len: normRand(15, 30), wid: normRand(5, 10),
+              ang: normRand(-0.5, 0.5),
+              col: getHSL(leafH, leafS, leafL, 0.7)
+            });
+          }
+        }
+      }
+      canv += poly(line1, {str: trunkCol, wid: 2}) + poly(line2, {str: trunkCol, wid: 2});
+      return canv;
+    };
+  }();
 
-        // 调用原代码的 Tree 函数，但传入我们计算的颜色参数
-        sceneMarkup += Tree.tree01(x, y, {
-            hei: normRand(100, 200),
-            wid: normRand(3, 8),
-            col: treeColor // 原代码支持 col 参数
-        });
+  // --- 核心逻辑：自动刷新、静态化与保存 ---
+  function generateScene() {
+    const container = document.getElementById("output");
+    const width = 1000, height = 700;
+    
+    // 1. 随机种子与环境色彩
+    Math.seed(); 
+    const themeHue = randChoice([30, 120, 150, 200, 280]); // 秋季/夏季/森林/夜晚色调
+    const bgL = normRand(85, 95);
+    const bgCol = getHSL(themeHue, 10, bgL);
+
+    // 2. 构造画面内容
+    let svgContent = `<rect width="100%" height="100%" fill="${bgCol}" />`;
+    
+    // 绘制一些随机树木
+    for (let i = 0; i < 6; i++) {
+        svgContent += Tree.drawAt(150 + i * 140 + normRand(-30, 30), 600 + normRand(-20, 20), themeHue);
     }
 
-    // 将生成的 SVG 字符串写入页面
-    // 建议包裹在一个 <svg> 标签内
-    container.innerHTML = `<svg width="1000" height="800" viewBox="0 0 1000 800">${sceneMarkup}</svg>`;
-}
+    // 3. 渲染到页面
+    const finalSVG = `<svg id="currentSVG" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${svgContent}</svg>`;
+    container.innerHTML = finalSVG;
 
-// --- 5. 设置定时自动刷新 ---
-// 每 10 秒钟自动重新作画一次
-setInterval(generateNewScene, 10000);
+    // 4. 自动保存 (可选：如果不需要频繁下载请注释掉 link.click())
+    /*
+    const blobData = new Blob([finalSVG], {type: 'image/svg+xml'});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blobData);
+    link.download = `art_${new Date().getTime()}.svg`;
+    // link.click(); 
+    */
+    
+    console.log("Canvas Refreshed at " + new Date().toLocaleTimeString());
+  }
 
-// 页面加载完成后立即执行一次
-window.onload = generateNewScene;
+  // 初次加载并设置 5 秒循环
+  generateScene();
+  setInterval(generateScene, 5000);
+
+</script>
+
+</body>
+</html>
