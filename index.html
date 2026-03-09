@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Procedural Art Generator - Colored & Auto</title>
+    <style>
+        body { margin: 0; background: #222; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        canvas { background: #f4f1ea; box-shadow: 0 0 20px rgba(0,0,0,0.5); max-width: 90vw; max-height: 90vh; }
+        #info { position: absolute; top: 10px; left: 10px; color: #fff; font-family: monospace; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="info">正在生成新作品... (每10秒刷新)</div>
+    <div id="canvas-container"></div>
+
+<script id="PRNG">
+    // 保持你原有的 Prng 逻辑，但简化调用
+    var Prng = new function() {
+        this.s = 1234; this.p = 999979; this.q = 999983; this.m = this.p * this.q;
+        this.hash = function(x) {
+            var y = window.btoa(JSON.stringify(x)), z = 0;
+            for (var i = 0; i < y.length; i++) z += y.charCodeAt(i) * Math.pow(128, i);
+            return z;
+        };
+        this.seed = function(x) {
+            x = x == undefined ? new Date().getTime() : x;
+            var y = 0, z = 0;
+            while (y % this.p == 0 || y % this.q == 0 || y == 0 || y == 1) { y = (this.hash(x) + z) % this.m; z += 1; }
+            this.s = y;
+            for (var i = 0; i < 10; i++) this.next();
+        };
+        this.next = function() { this.s = (this.s * this.s) % this.m; return this.s / this.m; };
+    }();
+    Math.random = function() { return Prng.next(); };
+</script>
+
+<script id="CoreLogic">
+    // 模拟简化的绘制逻辑以演示改进
+    const WIDTH = 800;
+    const HEIGHT = 600;
+
+    function generateNewArt() {
+        const container = document.getElementById('canvas-container');
+        // 1. 清空旧画布
+        container.innerHTML = ""; 
+        
+        // 2. 自动随机种子
+        const newSeed = Math.floor(Math.random() * 1000000);
+        Prng.seed(newSeed);
+
+        // 3. 创建 SVG 画布 (静态形式)
+        const svgNS = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(svgNS, "svg");
+        svg.setAttribute("width", WIDTH);
+        svg.setAttribute("height", HEIGHT);
+        svg.setAttribute("viewBox", `0 0 ${WIDTH} ${HEIGHT}`);
+        svg.style.background = getRandomWarmColor(0.05); // 背景上色
+
+        // --- 核心绘制逻辑改进：上色 ---
+        
+        // 绘制“山”的简易模拟
+        for(let i=0; i<5; i++) {
+            const hue = Math.floor(Math.random() * 360);
+            const color = `hsla(${hue}, 30%, 40%, 0.8)`;
+            const poly = document.createElementNS(svgNS, "polyline");
+            
+            let pts = "";
+            let startY = 200 + i * 80;
+            for(let x=0; x<=WIDTH; x+=20) {
+                let y = startY + (Math.random() - 0.5) * 100;
+                pts += `${x},${y} `;
+            }
+            pts += `${WIDTH},${HEIGHT} 0,${HEIGHT}`;
+            
+            poly.setAttribute("points", pts);
+            poly.setAttribute("fill", color);
+            poly.setAttribute("stroke", `hsla(${hue}, 40%, 20%, 1)`);
+            svg.appendChild(poly);
+        }
+
+        // 绘制“树”的简易模拟
+        for(let j=0; j<15; j++) {
+            const tx = Math.random() * WIDTH;
+            const ty = 300 + Math.random() * 200;
+            const treeColor = `hsla(${100 + Math.random() * 40}, 50%, 20%, 0.9)`; // 绿褐色系
+            
+            const rect = document.createElementNS(svgNS, "rect");
+            rect.setAttribute("x", tx);
+            rect.setAttribute("y", ty);
+            rect.setAttribute("width", 4);
+            rect.setAttribute("height", 40);
+            rect.setAttribute("fill", treeColor);
+            svg.appendChild(rect);
+        }
+
+        container.appendChild(svg);
+        
+        // 4. 自动保存提示 (实际下载可以调用此函数)
+        console.log(`作品已更新，Seed: ${newSeed}`);
+    }
+
+    function getRandomWarmColor(alpha) {
+        const r = 240 + Math.random() * 15;
+        const g = 230 + Math.random() * 15;
+        const b = 210 + Math.random() * 15;
+        return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    // 5. 定时器自动循环
+    generateNewArt();
+    setInterval(generateNewArt, 10000); // 每10秒自动刷新
+
+    // 手动保存功能
+    function saveSvg() {
+        const svgData = document.querySelector('svg').outerHTML;
+        const svgBlob = new Blob([svgData], {type:"image/svg+xml;charset=utf-8"});
+        const svgUrl = URL.createObjectURL(svgBlob);
+        const downloadLink = document.createElement("a");
+        downloadLink.href = svgUrl;
+        downloadLink.download = `art_${new Date().getTime()}.svg`;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+    }
+</script>
+</body>
+</html>
